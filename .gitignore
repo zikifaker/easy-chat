@@ -1,0 +1,44 @@
+# GoLand configuration files and cache
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# compiled files
+*.exe
+*.out
+*.dll
+*.so
+*.a
+*.o
+
+# log files
+logs/
+*.log
+
+# temporary files
+*.tmp
+*.swp
+*.swo
+
+# test files
+*.test
+
+# coverage files
+*.coverprofile
+
+# vendor directory
+vendor/
+
+# Docker-related files
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# macOS and Windows-specific files
+.DS_Store
+Thumbs.db
+
+# other file
+sk.txt
+config-*.yaml
