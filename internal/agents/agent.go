@@ -4,30 +4,30 @@ import (
 	"bytes"
 	"context"
 	"easy-chat/internal/agents/llms"
-	"easy-chat/internal/agents/memory"
 	"easy-chat/internal/agents/prompts"
-	"easy-chat/internal/agents/rag"
 	"easy-chat/internal/agents/toolkit"
+	"easy-chat/internal/consts"
+	"easy-chat/internal/dao"
+	"easy-chat/internal/request"
 	"errors"
 	"fmt"
+	"github.com/dlclark/regexp2"
 	"log"
-	"regexp"
 	"strings"
 	"text/template"
 )
 
 var (
-	ErrToolNotFound      = errors.New("tool not found")
-	ErrWhilePlanningStep = errors.New("error while planning step")
-	ErrWhileCallingTool  = errors.New("error while calling tool")
+	ErrToolNotFound        = errors.New("tool not found")
+	ErrWhilePlanningStep   = errors.New("error while planning step")
+	ErrWhileCallingTool    = errors.New("error while calling tool")
+	ErrWhileCompilingRegex = errors.New("error while compiling regex")
 )
 
 type Agent struct {
 	LLM     llms.LLM
 	Tools   []toolkit.Tool
-	Memory  memory.Memory
 	MaxStep int
-	RAG     rag.RAG
 }
 
 type Step struct {
@@ -47,17 +47,17 @@ func NewAgent(llm llms.LLM, tools []toolkit.Tool, options ...Option) (*Agent, er
 	return &Agent{
 		LLM:     llm,
 		Tools:   tools,
-		Memory:  opts.Memory,
 		MaxStep: opts.MaxStep,
 	}, nil
 }
 
-func (a *Agent) Execute(ctx context.Context, input string) (string, error) {
+func (a *Agent) Execute(ctx context.Context, request *request.ChatRequest) (string, error) {
 	var finalAnswer string
 	var immediateSteps []Step
 	toolMap := a.buildToolMap()
+
 	for i := 0; i < a.MaxStep; i++ {
-		step, err := a.plan(ctx, input, immediateSteps)
+		step, err := a.plan(ctx, request, immediateSteps)
 		if err != nil {
 			log.Printf("%v: %v", ErrWhilePlanningStep, err)
 			return "", err
@@ -71,21 +71,16 @@ func (a *Agent) Execute(ctx context.Context, input string) (string, error) {
 		if step.Action != "" {
 			observation, err := callTool(ctx, toolMap, step)
 			if err != nil {
-				log.Printf("%v: %s", ErrWhileCallingTool, step.Action)
+				log.Printf("%v %s: %v", ErrWhileCallingTool, step.Action, err)
 				step.Observation = err.Error()
 			} else {
-				log.Println("observation: ", observation)
+				log.Println("observation:", observation)
 				step.Observation = observation
 			}
 		}
 
 		immediateSteps = append(immediateSteps, *step)
 	}
-
-	a.Memory.AddMessage(ctx, []memory.Message{
-		{Role: memory.MessageRoleUser, Content: input},
-		{Role: memory.MessageRoleAI, Content: finalAnswer},
-	})
 
 	return finalAnswer, nil
 }
@@ -98,10 +93,10 @@ func (a *Agent) buildToolMap() map[string]toolkit.Tool {
 	return toolMap
 }
 
-func (a *Agent) plan(ctx context.Context, input string, immediateSteps []Step) (*Step, error) {
+func (a *Agent) plan(ctx context.Context, request *request.ChatRequest, immediateSteps []Step) (*Step, error) {
 	toolDetail := a.getToolDetail()
 	toolNames := a.getToolNames()
-	chatHistory := a.getChatHistory(ctx)
+	chatHistory := a.getChatHistory(request)
 	agentScratchpad := buildAgentScratchpad(immediateSteps)
 
 	prompt, err := renderPromptTemplate(prompts.ReActPromptTemplate, map[string]any{
@@ -111,17 +106,26 @@ func (a *Agent) plan(ctx context.Context, input string, immediateSteps []Step) (
 		"tool_names":       toolNames,
 		"chat_history":     chatHistory,
 		"agent_scratchpad": agentScratchpad,
-		"question":         input,
+		"question":         request.Query,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := a.LLM.GenerateContent(ctx, prompt)
+	streamFunc, exists := ctx.Value(consts.KeyStreamFunc).(llms.StreamFunc)
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", consts.ErrInvalidContextKey, consts.KeyStreamFunc)
+	}
+
+	result, err := a.LLM.GenerateContent(ctx, prompt, llms.WithStreamFunc(streamFunc))
 	if err != nil {
 		return nil, err
 	}
-	log.Println("agent step output:\n", result)
+
+	// force to output a new line for a new step
+	if err := streamFunc(ctx, []byte("\n\n")); err != nil {
+		return nil, err
+	}
 
 	step, err := parseOutput(result)
 	if err != nil {
@@ -146,12 +150,18 @@ func (a *Agent) getToolNames() string {
 	return strings.Join(names, ",")
 }
 
-func (a *Agent) getChatHistory(ctx context.Context) string {
+func (a *Agent) getChatHistory(request *request.ChatRequest) string {
 	var result strings.Builder
-	messages := a.Memory.GetMessages(ctx)
-	for _, message := range messages {
-		result.WriteString(message.Role + ": " + message.Content + "\n")
+
+	chatHistories, err := dao.GetChatHistoryBySessionID(request.SessionID)
+	if err != nil {
+		return ""
 	}
+
+	for _, chatHistory := range chatHistories {
+		result.WriteString(chatHistory.MessageType + ": " + chatHistory.Content + "\n")
+	}
+
 	return result.String()
 }
 
@@ -191,11 +201,11 @@ func parseOutput(output string) (*Step, error) {
 	step := &Step{}
 
 	fieldPatterns := map[string]string{
-		"Thought":     `Thought:\s*(.*)`,
-		"Action":      `Action:\s*(.*)`,
-		"ActionInput": `Action Input:\s*(.*)`,
-		"Observation": `Observation:\s*(.*)`,
-		"FinalAnswer": `Final Answer:\s*(.*)`,
+		"Thought":     `(?s)(?<=\*\*Thought\*\*:)\s*(.*?)(?=\*\*Action\*\*:\s|\Z)`,
+		"Action":      `(?s)(?<=\*\*Action\*\*:)\s*(.*?)(?=\*\*Action Input\*\*:\s|\Z)`,
+		"ActionInput": `(?s)(?<=\*\*Action Input\*\*:)\s*(.*?)(?=\*\*Observation\*\*:\s|\Z)`,
+		"Observation": `(?s)(?<=\*\*Observation\*\*:)\s*(.*?)(?=\*\*Final Answer\*\*:\s|\Z)`,
+		"FinalAnswer": `(?s)(?<=\*\*Final Answer\*\*:)\s*(.*)`,
 	}
 
 	for fieldName, pattern := range fieldPatterns {
@@ -218,21 +228,31 @@ func parseOutput(output string) (*Step, error) {
 }
 
 func extractField(output string, pattern string) string {
-	re := regexp.MustCompile(pattern)
-	match := re.FindStringSubmatch(output)
-	if len(match) > 1 {
-		return match[1]
+	re, err := regexp2.Compile(pattern, regexp2.None)
+	if err != nil {
+		log.Printf("%v: %v", ErrWhileCompilingRegex, err)
+		return ""
 	}
+
+	match, _ := re.FindStringMatch(output)
+	if match != nil {
+		if len(match.Groups()) > 0 {
+			return strings.TrimSpace(match.Groups()[0].String())
+		}
+	}
+
 	return ""
 }
 
 func callTool(ctx context.Context, toolMap map[string]toolkit.Tool, step *Step) (string, error) {
+	step.Action = strings.TrimSpace(step.Action)
 	tool, exists := toolMap[strings.ToUpper(step.Action)]
 	if !exists {
 		return "", fmt.Errorf("%w: %s", ErrToolNotFound, step.Action)
 	}
 
 	result, err := tool.Execute(ctx, step.ActionInput)
+
 	if err != nil {
 		return "", err
 	}

@@ -1,7 +1,14 @@
 package consts
 
+import "errors"
+
 type ContextKey string
 
+var (
+	ErrInvalidContextKey = errors.New("invalid context key")
+)
+
 const (
-	ContextKeyStreamFunc ContextKey = "stream_func"
+	KeyStreamFunc ContextKey = "stream_func"
+	KeySSEEvent   ContextKey = "sse_event"
 )

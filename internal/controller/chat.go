@@ -23,7 +23,7 @@ func ChatAPI(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 
 	ctx := c.Request.Context()
-	ctx = context.WithValue(ctx, consts.ContextKeyStreamFunc, createSSEStreamCallback(c))
+	ctx = context.WithValue(ctx, consts.KeyStreamFunc, buildSSECallback(c))
 
 	err := service.Chat(ctx, &req)
 	if err != nil {
@@ -33,9 +33,9 @@ func ChatAPI(c *gin.Context) {
 	}
 }
 
-func createSSEStreamCallback(c *gin.Context) llms.StreamFunc {
+func buildSSECallback(c *gin.Context) llms.StreamFunc {
 	return func(ctx context.Context, chunk []byte) error {
-		c.SSEvent("chunk", string(chunk))
+		c.SSEvent("result", string(chunk))
 		c.Writer.Flush()
 		return nil
 	}

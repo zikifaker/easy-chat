@@ -27,9 +27,8 @@ type client struct {
 }
 
 type Message struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type Input struct {
@@ -126,7 +125,7 @@ func (c *client) setHeaders(req *http.Request, isStream bool) {
 }
 
 func handleStreamResponse(ctx context.Context, chatRequest *ChatRequest, resp *http.Response) (*ChatResponse, error) {
-	bufferSize := 10
+	const bufferSize = 10
 	dataChan := make(chan *ChatResponse, bufferSize)
 
 	go func() {
@@ -150,31 +149,23 @@ func handleStreamResponse(ctx context.Context, chatRequest *ChatRequest, resp *h
 
 	var completeResponse *ChatResponse
 	var contentBuilder strings.Builder
-	var reasoningContentBuilder strings.Builder
 	for partialResponse := range dataChan {
-		reasonContent := partialResponse.Output.Choices[0].Message.ReasoningContent
-		if err := callStreamFunc(ctx, chatRequest.StreamFunc, reasonContent); err != nil {
-			log.Printf("%v: %v", ErrWhileCallingStreamFunc, err)
-		}
-
 		content := partialResponse.Output.Choices[0].Message.Content
 		if err := callStreamFunc(ctx, chatRequest.StreamFunc, content); err != nil {
 			log.Printf("%v: %v", ErrWhileCallingStreamFunc, err)
 		}
 
-		reasoningContentBuilder.WriteString(reasonContent)
 		contentBuilder.WriteString(content)
 		completeResponse = partialResponse
 	}
 
-	completeResponse.Output.Choices[0].Message.ReasoningContent = reasoningContentBuilder.String()
 	completeResponse.Output.Choices[0].Message.Content = contentBuilder.String()
 
 	return completeResponse, nil
 }
 
 func callStreamFunc(ctx context.Context, streamFunc llms.StreamFunc, content string) error {
-	if content == "" {
+	if streamFunc == nil || content == "" {
 		return nil
 	}
 	return streamFunc(ctx, []byte(content))

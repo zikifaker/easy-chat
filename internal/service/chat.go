@@ -3,26 +3,42 @@ package service
 import (
 	"context"
 	"easy-chat/config"
+	"easy-chat/internal/agents"
 	"easy-chat/internal/agents/llms"
 	"easy-chat/internal/agents/llms/qwen"
 	"easy-chat/internal/agents/memory"
+	"easy-chat/internal/agents/toolkit"
+	"easy-chat/internal/agents/toolkit/exa"
 	"easy-chat/internal/consts"
 	"easy-chat/internal/dao"
 	"easy-chat/internal/request"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
+const (
+	ModeNormal = "normal"
+	ModeAgent  = "agent"
+)
+
 var (
-	ErrInvalidContextKey   = errors.New("invalid context key")
-	ErrFailedToBuildPrompt = errors.New("failed to build prompt")
+	ErrInvalidMode = errors.New("invalid mode")
 )
 
 func Chat(ctx context.Context, request *request.ChatRequest) error {
-	cfg := config.Get()
+	switch request.Mode {
+	case ModeNormal:
+		return handleNormalChat(ctx, request)
+	case ModeAgent:
+		return handleAgentChat(ctx, request)
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidMode, request.Mode)
+	}
+}
 
+func handleNormalChat(ctx context.Context, request *request.ChatRequest) error {
+	cfg := config.Get()
 	llm, err := qwen.New(
 		qwen.WithModelName(request.Model),
 		qwen.WithAPIKey(cfg.APIKey.Qwen),
@@ -31,9 +47,9 @@ func Chat(ctx context.Context, request *request.ChatRequest) error {
 		return err
 	}
 
-	streamFunc, exists := ctx.Value(consts.ContextKeyStreamFunc).(llms.StreamFunc)
+	streamFunc, exists := ctx.Value(consts.KeyStreamFunc).(llms.StreamFunc)
 	if !exists {
-		return fmt.Errorf("%w: %s", ErrInvalidContextKey, consts.ContextKeyStreamFunc)
+		return fmt.Errorf("%w: %s", consts.ErrInvalidContextKey, consts.KeyStreamFunc)
 	}
 
 	prompt, err := buildPrompt(request)
@@ -43,16 +59,50 @@ func Chat(ctx context.Context, request *request.ChatRequest) error {
 
 	result, err := llm.GenerateContent(ctx, prompt, llms.WithStreamFunc(streamFunc))
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToBuildPrompt, err)
+		return err
 	}
 
-	log.Println("result: ", result)
-
-	err = dao.SaveChatHistory(request, []memory.Message{
+	if err := dao.SaveChatHistory(request, []memory.Message{
 		{Role: memory.MessageRoleUser, Content: request.Query},
 		{Role: memory.MessageRoleAI, Content: result},
-	})
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func handleAgentChat(ctx context.Context, request *request.ChatRequest) error {
+	cfg := config.Get()
+	llm, err := qwen.New(
+		qwen.WithModelName(request.Model),
+		qwen.WithAPIKey(cfg.APIKey.Qwen),
+	)
 	if err != nil {
+		return err
+	}
+
+	searchTool, err := exa.NewSearchTool(cfg.APIKey.Exa)
+	if err != nil {
+		return err
+	}
+
+	tools := []toolkit.Tool{searchTool}
+
+	agent, err := agents.NewAgent(llm, tools)
+	if err != nil {
+		return err
+	}
+
+	result, err := agent.Execute(ctx, request)
+	if err != nil {
+		return err
+	}
+
+	if err := dao.SaveChatHistory(request, []memory.Message{
+		{Role: memory.MessageRoleUser, Content: request.Query},
+		{Role: memory.MessageRoleAI, Content: result},
+	}); err != nil {
 		return err
 	}
 
@@ -60,20 +110,20 @@ func Chat(ctx context.Context, request *request.ChatRequest) error {
 }
 
 func buildPrompt(request *request.ChatRequest) (string, error) {
-	var result strings.Builder
+	var prompt strings.Builder
 
 	chatHistories, err := dao.GetChatHistoryBySessionID(request.SessionID)
 	if err != nil {
 		return "", err
 	}
 
-	result.WriteString("Chat History:\n")
+	prompt.WriteString("Chat History:\n")
 	for _, chatHistory := range chatHistories {
-		result.WriteString(chatHistory.MessageType + ": " + chatHistory.Content + "\n")
+		prompt.WriteString(chatHistory.MessageType + ": " + chatHistory.Content + "\n")
 	}
 
-	result.WriteString("User Query:\n")
-	result.WriteString(request.Query)
+	prompt.WriteString("User Query:\n")
+	prompt.WriteString(request.Query)
 
-	return result.String(), nil
+	return prompt.String(), nil
 }

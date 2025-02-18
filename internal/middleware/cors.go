@@ -6,7 +6,7 @@ import (
 )
 
 func CORSMiddleware() gin.HandlerFunc {
-	allowedOrigins := []string{"http://localhost:7002"}
+	allowedOrigins := []string{"http://localhost:7000"}
 
 	return func(c *gin.Context) {
 		handleCORS(c, allowedOrigins)
