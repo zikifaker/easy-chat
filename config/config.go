@@ -24,6 +24,7 @@ type DataBaseConfig struct {
 type Config struct {
 	DataBase struct {
 		Mysql DataBaseConfig `yaml:"mysql"`
+		Redis DataBaseConfig `yaml:"redis"`
 	} `yaml:"database"`
 	SecretKey struct {
 		JWT string `yaml:"jwt"`
@@ -32,6 +33,7 @@ type Config struct {
 		Qwen string `yaml:"qwen"`
 		Exa  string `yaml:"exa"`
 	} `yaml:"api_key"`
+	AllowedOrigin []string `yaml:"allowed_origin"`
 }
 
 func Init(configPath string) error {

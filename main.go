@@ -2,13 +2,17 @@ package main
 
 import (
 	"easy-chat/config"
-	"easy-chat/internal/dao"
-	"easy-chat/internal/router"
+	"easy-chat/dao"
+	"easy-chat/router"
 	"log"
 )
 
+const (
+	configFilePath = "config-dev.yaml"
+)
+
 func main() {
-	if err := config.Init("config-dev.yaml"); err != nil {
+	if err := config.Init(configFilePath); err != nil {
 		log.Fatal(err)
 	}
 
