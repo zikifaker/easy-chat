@@ -1,10 +1,8 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"easy-chat/agents"
-	qwen2 "easy-chat/agents/embedExecutors/qwen"
 	"easy-chat/agents/llms"
 	"easy-chat/agents/llms/qwen"
 	"easy-chat/agents/memory"
@@ -14,10 +12,8 @@ import (
 	"easy-chat/consts"
 	"easy-chat/dao"
 	"easy-chat/request"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"strings"
 )
 
@@ -26,12 +22,7 @@ const (
 	ModeAgent  = "agent"
 )
 
-const qaIndexPrefix = "qa:"
-
-var (
-	ErrInvalidMode         = errors.New("invalid mode")
-	ErrFailedToSavedQAPair = errors.New("failed to save QA pair")
-)
+var ErrInvalidMode = errors.New("invalid mode")
 
 func Chat(ctx context.Context, request *request.ChatRequest) error {
 	var result string
@@ -56,10 +47,6 @@ func Chat(ctx context.Context, request *request.ChatRequest) error {
 		{Role: memory.MessageRoleUser, Content: request.Query},
 		{Role: memory.MessageRoleAI, Content: result},
 	}); err != nil {
-		return err
-	}
-
-	if err := saveQAPair(ctx, request.Query, result); err != nil {
 		return err
 	}
 
@@ -141,47 +128,4 @@ func buildPrompt(request *request.ChatRequest) (string, error) {
 	prompt.WriteString(request.Query)
 
 	return prompt.String(), nil
-}
-
-func saveQAPair(ctx context.Context, query, answer string) error {
-	cfg := config.Get()
-	embedExecutor, err := qwen2.New(
-		qwen2.WithModelName(qwen2.ModelNameTextEmbeddingV2),
-		qwen2.WithAPIKey(cfg.APIKey.Qwen),
-	)
-	if err != nil {
-		return err
-	}
-
-	embeddings, err := embedExecutor.GenerateEmbeddings(ctx, []string{query})
-	if err != nil {
-		return err
-	}
-	queryEmbedding := embeddings[0]
-
-	queryEmbeddingBytes, err := convertFloat32SliceToBytes(queryEmbedding)
-	if err != nil {
-		return err
-	}
-
-	qaKey := qaIndexPrefix + uuid.New().String()
-	client := dao.GetCacheClient()
-	if err := client.HSet(ctx, qaKey, map[string]interface{}{
-		"query":     query,
-		"answer":    answer,
-		"embedding": queryEmbeddingBytes,
-	}).Err(); err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToSavedQAPair, err)
-	}
-
-	return nil
-}
-
-func convertFloat32SliceToBytes(embedding []float32) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, embedding)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

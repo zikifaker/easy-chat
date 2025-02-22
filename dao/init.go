@@ -9,23 +9,15 @@ import (
 )
 
 var (
-	db    *gorm.DB
-	cache *redis.Client
+	DB          *gorm.DB
+	RedisClient *redis.Client
 )
-
-func GetDBClient() *gorm.DB {
-	return db
-}
-
-func GetCacheClient() *redis.Client {
-	return cache
-}
 
 func Init() error {
 	if err := initDB(); err != nil {
 		return err
 	}
-	if err := initCache(); err != nil {
+	if err := initRedisClient(); err != nil {
 		return err
 	}
 	return nil
@@ -34,21 +26,23 @@ func Init() error {
 func initDB() error {
 	dsn := buildDSN()
 	var err error
-	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func initCache() error {
-	cache = redis.NewClient(&redis.Options{
-		Addr: "localhost:" + config.Get().DataBase.Redis.Port,
-		DB:   0,
+func initRedisClient() error {
+	cfg := config.Get()
+	RedisClient = redis.NewClient(&redis.Options{
+		Addr:     "localhost:" + cfg.DataBase.Redis.Port,
+		Password: cfg.DataBase.Redis.Password,
+		DB:       0,
 	})
 
 	ctx := context.Background()
-	if _, err := cache.Ping(ctx).Result(); err != nil {
+	if _, err := RedisClient.Ping(ctx).Result(); err != nil {
 		return err
 	}
 

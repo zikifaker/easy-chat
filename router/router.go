@@ -21,7 +21,7 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/chat-session/:username", controller.GetUserChatSessionAPI)
 	r.DELETE("/api/chat-session/:session_id", controller.DeleteChatSessionAPI)
 	r.GET("/api/chat-history/:session_id", controller.GetChatHistoryAPI)
-	r.POST("/api/chat", middleware.RetrieveMiddleware, controller.ChatAPI)
+	r.POST("/api/chat", controller.ChatAPI)
 
 	return r
 }

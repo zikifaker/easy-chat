@@ -16,7 +16,7 @@ func CreateChatSession(username string) (string, error) {
 		SessionID: sessionID,
 		UserID:    user.ID,
 	}
-	result := db.Create(session)
+	result := DB.Create(session)
 	if result.Error != nil {
 		return "", result.Error
 	}
@@ -25,7 +25,7 @@ func CreateChatSession(username string) (string, error) {
 }
 
 func DeleteChatSession(sessionID string) error {
-	return db.Where("session_id = ?", sessionID).Delete(&entity.ChatSession{}).Error
+	return DB.Where("session_id = ?", sessionID).Delete(&entity.ChatSession{}).Error
 }
 
 func GetChatSessionByUsername(username string) ([]*entity.ChatSession, error) {
@@ -35,9 +35,10 @@ func GetChatSessionByUsername(username string) ([]*entity.ChatSession, error) {
 	}
 
 	var sessions []*entity.ChatSession
-	result := db.Where("user_id = ?", user.ID).Find(&sessions)
+	result := DB.Where("user_id = ?", user.ID).Find(&sessions)
 	if result.Error != nil {
 		return nil, result.Error
 	}
+
 	return sessions, nil
 }

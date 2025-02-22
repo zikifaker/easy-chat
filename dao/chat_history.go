@@ -9,7 +9,7 @@ import (
 func GetChatHistoryBySessionID(sessionID string) ([]*entity.ChatHistory, error) {
 	var chatHistories []*entity.ChatHistory
 
-	result := db.Where("session_id = ?", sessionID).Find(&chatHistories)
+	result := DB.Where("session_id = ?", sessionID).Find(&chatHistories)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -30,7 +30,7 @@ func SaveChatHistory(chatRequest *request.ChatRequest, messages []memory.Message
 			MessageType: message.Role,
 			Content:     message.Content,
 		}
-		result := db.Create(chatHistory)
+		result := DB.Create(chatHistory)
 		if result.Error != nil {
 			return result.Error
 		}
