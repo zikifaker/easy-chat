@@ -4,6 +4,7 @@ import (
 	"easy-chat/config"
 	"easy-chat/dao"
 	"easy-chat/router"
+	"easy-chat/service/mq"
 	"log"
 )
 
@@ -17,6 +18,10 @@ func main() {
 	}
 
 	if err := dao.Init(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := mq.Init(); err != nil {
 		log.Fatal(err)
 	}
 

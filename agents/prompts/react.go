@@ -1,7 +1,7 @@
 package prompts
 
 const ReActPromptTemplate = `
-	You are an AI agent that needs to solve problems step by step.
+	You are an AI agent that needs to think step by step.
 
 	You are allowed a maximum of {{.max_step}} steps to solve the problem.
 	If you reach the maximum number of steps without finding a solution, you must provide the best answer you have so far.

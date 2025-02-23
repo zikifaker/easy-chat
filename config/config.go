@@ -15,16 +15,13 @@ var (
 
 var globalConfig *Config
 
-type DataBaseConfig struct {
-	Port     string `yaml:"port"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
 type Config struct {
 	DataBase struct {
-		Mysql DataBaseConfig `yaml:"mysql"`
-		Redis DataBaseConfig `yaml:"redis"`
+		Mysql struct {
+			Port     string `yaml:"port"`
+			Username string `yaml:"username"`
+			Password string `yaml:"password"`
+		} `yaml:"mysql"`
 	} `yaml:"database"`
 	SecretKey struct {
 		JWT string `yaml:"jwt"`
@@ -34,6 +31,11 @@ type Config struct {
 		Exa  string `yaml:"exa"`
 	} `yaml:"api_key"`
 	AllowedOrigin []string `yaml:"allowed_origin"`
+	MQ            struct {
+		Port     string `yaml:"port"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	}
 }
 
 func Init(configPath string) error {

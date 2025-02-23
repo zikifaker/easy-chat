@@ -7,15 +7,15 @@ import (
 )
 
 func CreateChatSessionAPI(c *gin.Context) {
-	var request struct {
+	var req struct {
 		Username string `json:"username" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	sessionID, err := dao.CreateChatSession(request.Username)
+	sessionID, err := dao.CreateChatSession(req.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}

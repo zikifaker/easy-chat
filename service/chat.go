@@ -24,7 +24,7 @@ const (
 
 var ErrInvalidMode = errors.New("invalid mode")
 
-func Chat(ctx context.Context, request *request.ChatRequest) error {
+func HandleChat(ctx context.Context, request *request.ChatRequest) error {
 	var result string
 	var err error
 
